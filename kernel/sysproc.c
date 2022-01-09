@@ -80,6 +80,36 @@ sys_sleep(void)
 int sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 pgstartaddr;
+  if (argaddr(0, &pgstartaddr) < 0)
+    return -1;
+  int pgnum;
+  if (argint(1, &pgnum) < 0)
+    return -1;
+  if (pgnum > 64)
+  {
+    return -1;
+  }
+  uint64 bitmap;
+  if (argaddr(2, &bitmap) < 0)
+    return -1;
+
+  uint64 buffer = 0;
+  struct proc *p = myproc();
+  int cnt = 0;
+  for (int i = 0; i < pgnum; i++)
+  {
+
+    pte_t *pte = walk(p->pagetable, pgstartaddr + i * PGSIZE, 0);
+    if (*pte & PTE_A)
+    {
+      buffer = buffer | (1 << cnt);
+      *pte ^= PTE_A;
+    }
+    cnt++;
+  }
+
+  copyout(p->pagetable, bitmap, (char *)&buffer, sizeof(buffer));
   return 0;
 }
 #endif
@@ -105,30 +135,4 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
-}
-
-uint64 sys_pgaccess(void)
-{
-  uint64 pagetable;
-  if (argaddr(0, &pagetable) < 0)
-    return -1;
-  int np;
-  if (argint(1, &np) < 0)
-    return -1;
-  for (int level = 2; level > 0; level--)
-  {
-    pte_t *pte = &pagetable[PX(level, va)];
-    if (*pte & PTE_V)
-    {
-      pagetable = (pagetable_t)PTE2PA(*pte);
-    }
-    else
-    {
-      if (pagetable = (pde_t *)kalloc() == 0)
-        return 0;
-      memset(pagetable, 0, PGSIZE);
-      *pte = PA2PTE(pagetable) | PTE_V;
-    }
-  }
-  uint64 buffer;
 }
