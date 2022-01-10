@@ -198,6 +198,10 @@ UPROGS=\
 	$U/_primes\
 	$U/_find\
 	$U/_xargs\
+	$U/_forkdemo\
+	$U/_execdemo\
+	$U/_execfaildemo\
+	$U/_redirectdemo\
 
 
 
