@@ -321,7 +321,7 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // only process writable pages
     if (*pte & PTE_W)
     {
-      *pte = ((*pte) & (~PTE_W)) | PTE_COW;
+      *pte =((*pte) & (~PTE_W)) | PTE_COW;
     }
     // incr pa ref cnt
     pa = PTE2PA(*pte);
@@ -332,14 +332,15 @@ int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if (mappages(new, i, PGSIZE, pa, PTE_FLAGS(*pte)) != 0)
     {
       kfree((char *)pa);
-      goto err;
+      // goto err;
+      return -1;
     }
   }
   return 0;
 
-err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
+// err:
+//   uvmunmap(new, 0, i / PGSIZE, 1);
+//   return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -359,36 +360,51 @@ void uvmclear(pagetable_t pagetable, uint64 va)
 // Return 0 on success, -1 on error.
 int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
+  // why add this check after adding cow?
+  if(dstva > MAXVA){
+    return -1;
+  }
+
   uint64 n, va0, pa0;
   pte_t *pte;
-  // printf("copyout ent\n");
+  uint flags;
+
   while (len > 0)
   {
     va0 = PGROUNDDOWN(dstva);
     pte = walk(pagetable, va0, 0);
-    if ((*pte & PTE_V) == 0)
-      panic("copyout: not mapped");
-    pa0 = PTE2PA(*pte);
+
+    // walkaddr() return 0 if pte is invalid 
+    // need add these check after using pte
+    if(pte == 0)
+      return -1;
+    if((*pte & PTE_V) == 0)
+      return -1;
+    if((*pte & PTE_U) == 0)
+      return -1;
+
     if (*pte & PTE_COW)
     {
       uint64 ka = (uint64)kalloc();
       if (ka == 0)
       {
-        return -1;
+        // why panic instead of return -1
+        panic("copyout : can't map page");
       }
+      flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+      pa0 = PTE2PA(*pte);
       memmove((void *)ka, (void *)pa0, PGSIZE);
       uvmunmap(pagetable, va0, 1, 1);
-      *pte = (*pte | PTE_W) & ~PTE_COW;
-      if (mappages(pagetable, va0, PGSIZE, ka, PTE_FLAGS(*pte)) != 0)
+
+      if (mappages(pagetable, va0, PGSIZE, ka, flags) != 0)
       {
         kfree((void *)ka);
-        return -1;
+        // why panic instead of return -1
+        panic("copyout : can't map page");
       }
-      pa0 = ka;
     }
-    // va0 = PGROUNDDOWN(dstva);
-    // pa0 = PTE2PA(*pte);
-    // pa0 = walkaddr(pagetable, va0);
+
+    pa0 = walkaddr(pagetable, va0);
     if (pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);

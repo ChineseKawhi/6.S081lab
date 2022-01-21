@@ -71,8 +71,7 @@ void usertrap(void)
     uint64 va, pa, ka;
     ka = 0;
     va = r_stval();
-    printf("pid %d\n", p->pid);
-    printf("page fault: %p(%p)\n", PGROUNDDOWN(va), PTE2PA(*walk(p->pagetable, PGROUNDDOWN(va), 0)));
+
     if (va >= MAXVA || (va <= PGROUNDDOWN(p->trapframe->sp) && va >= PGROUNDDOWN(p->trapframe->sp) - PGSIZE))
     {
       p->killed = 1;
@@ -80,47 +79,43 @@ void usertrap(void)
     else
     {
       va = PGROUNDDOWN(va);
-      pte = walk(p->pagetable, va, 0);
-      printf("PTE_COW %d\n", (int)(*pte & PTE_COW));
-      printf("PTE_W   %d\n", (int)(*pte & PTE_W));
-      if ((int)(*pte & PTE_COW) > 0)
-      {
-        ka = (uint64)kalloc();
-        if (ka == 0)
+      if ((pte = walk(p->pagetable, va, 0)) == 0)
+        p->killed = 1;
+      else{
+        if (*pte & PTE_COW)
         {
-          p->killed = 1;
+          ka = (uint64)kalloc();
+          if (ka == 0)
+          {
+            p->killed = 1;
+          }
+          else
+          {
+            pa = PTE2PA(*pte);
+            flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
+            
+            memmove((void *)ka, (void *)pa, PGSIZE);
+            uvmunmap(p->pagetable, va, 1, 1);
+
+            if (mappages(p->pagetable, va, PGSIZE, ka, flags) != 0)
+            {
+              kfree((void *)ka);
+              p->killed = 1;
+            }
+          }
         }
         else
         {
-          pa = PTE2PA(*pte);
-          memmove((void *)ka, (void *)pa, PGSIZE);
-          uvmunmap(p->pagetable, va, 1, 1);
-
-          *pte = (*pte | PTE_W) & ~PTE_COW;
-
-          flags = PTE_FLAGS(*pte);
-          if (mappages(p->pagetable, va, PGSIZE, ka, flags) != 0)
-          {
-            kfree((void *)ka);
-            p->killed = 1;
-          }
+          p->killed = 1;
         }
-        printf("PTE_COW %d\n", (int)(*pte & PTE_COW));
-        printf("PTE_W   %d\n", (int)(*pte & PTE_W));
       }
-      else
-      {
-        p->killed = 1;
-        printf("kill for not cow\n");
-      }
+      
     }
-    printf("page fault: %p(%p) handled\n", va, ka);
   }
   else if ((which_dev = devintr()) != 0)
   {
     // ok
   }
-
   else
   {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
